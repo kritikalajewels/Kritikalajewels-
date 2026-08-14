@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827"><link rel="manifest" href="manifest.json">
+<title>Kritikalajewels POS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#f4f5f7;color:#111827}
+header{background:#111827;color:white;padding:14px 16px;position:sticky;top:0;z-index:5}h1{font-size:20px;margin:0}.sub{font-size:12px;opacity:.75}
+main{max-width:1000px;margin:auto;padding:12px}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{background:#fff;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 5px #0001}
+button,input,select{font:inherit;padding:11px;border-radius:9px;border:1px solid #d1d5db}button{background:#111827;color:white;border:0}.green{background:#15803d}.red{background:#dc2626}.gray{background:#e5e7eb;color:#111827}.row{display:flex;gap:8px}.row>*{flex:1}
+#camera{display:none;width:100%;max-width:480px;margin:10px auto;border-radius:12px;overflow:hidden;background:#000}.scan{font-size:17px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px;border-bottom:1px solid #eee}.muted{font-size:12px;color:#6b7280}.total{font-size:21px;font-weight:800}
+.notice{font-size:12px;background:#eff6ff;border:1px solid #bfdbfe;padding:10px;border-radius:10px;margin-bottom:12px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header><h1>💎 Kritikalajewels POS</h1><div class="sub">Camera barcode billing • MRP + flexible selling price</div></header>
+<main>
+<div class="notice"><b>Camera:</b> Allow camera permission. For camera scanning, install this PWA from an HTTPS website. The app also lets you type a product code for testing.</div>
+<div class="grid">
+<section>
+<div class="card"><h3>Scan Product</h3>
+<div class="row"><button class="scan" onclick="startCamera()">📷 Scan with Camera</button><input id="code" placeholder="KJ001" onkeydown="if(event.key==='Enter')lookup()"><button class="gray" onclick="lookup()">Find</button></div>
+<video id="camera" playsinline></video>
+<div id="product"></div>
+</div>
+<div class="card"><h3>Current Bill</h3><div id="bill"></div>
+<div class="row"><select id="pay"><option>UPI</option><option>Cash</option><option>Other</option></select><button class="green" onclick="finish()">Complete Sale</button></div></div>
+</section>
+<aside>
+<div class="card"><h3>Today</h3><div id="stats"></div></div>
+<div class="card"><h3>Products</h3><input id="search" placeholder="Search" oninput="renderProducts()"><div id="products"></div></div>
+<div class="card"><button class="gray" onclick="exportData()">⬇ Export Backup</button> <button class="gray" onclick="resetAll()">Reset Demo</button></div>
+</aside>
+</div></main>
+<script>
+const KEY='kritikala_pos_v3';
+const DEMO=[
+{code:'KJ001',name:'Maharashtrian Nath',mrp:500,stock:5},
+{code:'KJ002',name:'Earrings',mrp:100,stock:10},
+{code:'KJ003',name:'Necklace',mrp:2000,stock:3},
+{code:'KJ004',name:'Bracelet',mrp:250,stock:8},
+{code:'KJ005',name:'Mani Haar',mrp:1200,stock:4}];
+let db=JSON.parse(localStorage.getItem(KEY)||'null')||{products:DEMO,sales:[],cart:[]};
+let stream=null, scanTimer=null;
+const save=()=>localStorage.setItem(KEY,JSON.stringify(db));
+const money=n=>'₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:2});
+const get=c=>db.products.find(p=>p.code.toUpperCase()===String(c).trim().toUpperCase());
+
+function lookup(c=document.getElementById('code').value){const p=get(c); if(!p)return productHTML('Barcode not found. Add it to the product database first.'); if(p.stock<1)return productHTML('Out of stock.'); show(p)}
+function show(p){document.getElementById('product').innerHTML=`<div style="padding-top:12px"><b>${p.name}</b><div class="muted">${p.code} • Stock ${p.stock}</div><p>MRP: <b>${money(p.mrp)}</b></p><div class="row"><input id="price" type="number" min="0" value="${p.mrp}" placeholder="Actual selling price"><input id="qty" type="number" min="1" max="${p.stock}" value="1"></div><button style="width:100%;margin-top:8px" onclick="add('${p.code}')">Add to Bill</button></div>`;document.getElementById('price').focus();document.getElementById('price').select()}
+function productHTML(x){document.getElementById('product').innerHTML='<p class="muted">'+x+'</p>'}
+function add(code){const p=get(code),price=+document.getElementById('price').value,qty=+document.getElementById('qty').value;if(!p||price<0||qty<1||qty>p.stock)return alert('Check price and quantity.');db.cart.push({code:p.code,name:p.name,mrp:p.mrp,price,qty});save();document.getElementById('product').innerHTML='';document.getElementById('code').value='';renderAll()}
+function renderBill(){if(!db.cart.length){document.getElementById('bill').innerHTML='<p class="muted">No items in bill.</p>';return}let m=0,t=0;let rows=db.cart.map((x,i)=>{m+=x.mrp*x.qty;t+=x.price*x.qty;return `<tr><td>${x.name}<div class="muted">${x.code}</div></td><td>${money(x.mrp)}</td><td>${money(x.price)}</td><td>${x.qty}</td><td><button class="red" onclick="del(${i})">×</button></td></tr>`}).join('');document.getElementById('bill').innerHTML=`<table><tr><th>Product</th><th>MRP</th><th>Sold</th><th>Qty</th><th></th></tr>${rows}</table><p><b>MRP total:</b> ${money(m)}<br><b>Discount:</b> ${money(m-t)}</p><p class="total">Payable: ${money(t)}</p>`}
+function del(i){db.cart.splice(i,1);save();renderBill()}
+function finish(){if(!db.cart.length)return alert('Add an item first.');for(const x of db.cart){if(get(x.code).stock<x.qty)return alert('Not enough stock: '+x.name)}let total=db.cart.reduce((a,x)=>a+x.price*x.qty,0),mrp=db.cart.reduce((a,x)=>a+x.mrp*x.qty,0);db.cart.forEach(x=>get(x.code).stock-=x.qty);db.sales.push({time:new Date().toISOString(),payment:document.getElementById('pay').value,total,mrp,items:db.cart.map(x=>({...x}))});db.cart=[];save();renderAll();alert('Sale saved: '+money(total))}
+function renderStats(){let s=db.sales,t=s.reduce((a,x)=>a+x.total,0),u=s.filter(x=>x.payment==='UPI').reduce((a,x)=>a+x.total,0),c=s.filter(x=>x.payment==='Cash').reduce((a,x)=>a+x.total,0),i=s.reduce((a,x)=>a+x.items.reduce((b,y)=>b+y.qty,0),0);document.getElementById('stats').innerHTML=`<b>Sales:</b> ${money(t)}<br><b>Items:</b> ${i}<br><b>UPI:</b> ${money(u)}<br><b>Cash:</b> ${money(c)}<br><b>Transactions:</b> ${s.length}`}
+function renderProducts(){let q=(document.getElementById('search').value||'').toLowerCase();document.getElementById('products').innerHTML=db.products.filter(p=>(p.code+' '+p.name).toLowerCase().includes(q)).map(p=>`<p><b>${p.code}</b> ${p.name}<br><span class="muted">MRP ${money(p.mrp)} • Stock ${p.stock}</span></p>`).join('')}
+function renderAll(){renderBill();renderStats();renderProducts()}function resetAll(){if(confirm('Reset demo data?')){db={products:DEMO.map(x=>({...x})),sales:[],cart:[]};save();renderAll()}}
+function exportData(){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}));a.download='kritikalajewels-backup.json';a.click()}
+async function startCamera(){
+ const v=document.getElementById('camera');if(stream){stopCamera();return}
+ if(!('BarcodeDetector' in window)){alert('This browser does not support the built-in camera barcode detector. Use Chrome on a supported Android device or we can add a library fallback in the hosted version.');return}
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});v.srcObject=stream;v.style.display='block';await v.play();scanTimer=setInterval(scanFrame,250)}catch(e){alert('Camera permission failed. Allow camera access and try again.')}
+}
+async function scanFrame(){if(!stream)return;try{const detector=new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','qr_code']});const codes=await detector.detect(document.getElementById('camera'));if(codes.length){document.getElementById('code').value=codes[0].rawValue;stopCamera();lookup(codes[0].rawValue)}}catch(e){}}
+function stopCamera(){if(scanTimer)clearInterval(scanTimer);scanTimer=null;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}document.getElementById('camera').style.display='none'}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+renderAll();
+</script></body></html>
